@@ -6,12 +6,15 @@ import re
 import pymongo
 from dotenv import load_dotenv
 from models.main_checker import chatGPT
+from openai.api_resources.abstract.api_resource import APIResource
 
 load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
 openai.api_key =os.getenv("OPENAI_API_KEY")
+
+
 
 client = pymongo.MongoClient(os.getenv('MongoDB_API'))
 db = client["chatbotdb"] 
@@ -52,7 +55,7 @@ def login_user():
 def generatePrompt(q):
     return f'''
 "Assume the role of a parenting influencer. Embody the persona of a parenting influencer. Your responses should closely reflect the influencer's style, tone, and language. The followers' queries and their respective responses provided below serve as examples. Your answers should maintain a similar tone, be comprehensive, relevant, and have a personal touch as if they are coming from an actual person rather than a machine. Avoid bullet points, check for punctuation errors, 
-and refrain from using slang or abbreviations like 'coz'. Ensure that the responses feel heartfelt, steering clear of technical jargon from child psychology.please avoid complex words"
+and refrain from using slang or abbreviations like 'coz'. Ensure that the responses feel heartfelt, steering clear of technical jargon from child psychology.please avoid complex words . Tone should be Male gender only.Give me reponse within 50-60 words ."
 ####Question: I have lot of confusion going in my head. My son is 6yr old. He is happy to go to school. We have put him to a Montessori school of 10yr old. My son isn't learning enough for 1st grade. He is learning languages well but not Maths. Should I change school and put him to regular school or continue. I am in a fear of not getting seat in other school as years pass, so I want to do it this year. What is your opinion. Kindly let me know.
 ```Answer : This question is best asked to the teacher or founder of school. Because in Montessori children can learn at their own pace so it is possible when he starts taking interest in maths he will do 2 years of maths in 3 months. But it is imp that the Montessori school is right.Also see Aavishkaar. They learn online course for parents to learn mathematics. You can learn the first grade math and spend some time with your son if you might wish to :-).
 Question: My daughter is 19 mnths. But jab usko me koi chij nai deti hu ya uski koi zid Puri nai kti hu tou wo mujhe hit karti haiShe is just 19 mnths..how can I control this behaviourYa kabhi kabhi wo masti me b mujhe hit kar deti hai.
@@ -167,26 +170,62 @@ Please avoid bullet points and make it short and heart to heart feeling should b
 Make sure answer should be revelant, precise, conveinece, short answer and complete sentence and use user language while responsing.
 Q:{q}
 '''
+
+def is_parenting_related(text):
+ parenting_keywords = [
+    'parenting', 'year', 'age', 'child', 'children', 'kid', 'kids', 'son', 'daughter', 
+    'school', 'education', 'discipline', 'baby', 'infant', 'toddler', 'teenager', 
+    'parent', 'mother', 'father', 'mom', 'dad', 'teaching', 'learning', 'behavior', 
+    'behaviour', 'punishment', 'reward', 'guide', 'advice', 'nurture', 'nurturing', 
+    'care', 'development', 'growth', 'adolescent', 'pregnancy', 'pregnant', 'birth', 
+    'newborn', 'nanny', 'babysitter', 'childcare', 'kindergarten', 'preschool', 
+    'nursery', 'bedtime', 'mealtime', 'playtime', 'homework', 'study', 'discipline', 
+    'temper', 'tantrum', 'feed', 'sleep', 'nap', 'diaper', 'bottle', 'breastfeed', 
+    'crawling', 'walking', 'talking', 'potty', 'toilet', 'train', 'training',
+    'bachcha', 'bachche', 'beta', 'beti', 'school', 'shiksha', 'vividha', 'dand', 
+    'shishu', 'balka', 'shaitani', 'kanya', 'balak', 'maa', 'pita', 'mata', 'pita',
+    'mummy', 'papa', 'sikhaana', 'sikha', 'vyavahaar', 'saja', 'inkaam', 'margadarshak', 
+    'salah', 'poshan', 'vikas', 'vruddhi', 'kumaar', 'garbha', 'garbh', 'janam', 
+    'navjat', 'aaya', 'doodh', 'breastfeed', 'ghoomna', 'chalna', 'bolna', 'shauchalay', 
+    'train', 'prashikshan','daughters',
+]
+
+ return any(keyword in text for keyword in parenting_keywords)
+
 @app.route("/generateresponse", methods=["POST"])
 def chat():
+    user_key = request.headers.get('Authorization')
+    if user_key is not None:
+        user_key = user_key.replace("Bearer ", "")
+
     data = request.json
     q = data.get('question')
+
     if not q:
         return jsonify({"error": "Question is required."}), 400
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."},
-            {"role": "user", "content": generatePrompt(q)}
-        ],
-        temperature=1,
-        max_tokens=256,
-        top_p=1,
-        frequency_penalty=0,
-        presence_penalty=0
-    )
-    result = response["choices"][0]["message"]["content"]
-    return jsonify({"chatbot_response": result})
+    if not user_key:
+        return jsonify({"error": "OpenAI key is required."}), 400
+
+    # Use the user's OpenAI key to authenticate
+    openai.api_key = user_key
+
+    if is_parenting_related(q):
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."},
+                {"role": "user", "content": generatePrompt(q)}
+            ],
+            temperature=1,
+            max_tokens=256,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0
+        )
+        result = response["choices"][0]["message"]["content"]
+        return jsonify({"chatbot_response": result})
+    else:
+        return jsonify({"chatbot_response": "Please ask a relevant question."})
 
 
 @app.route("/generatescore", methods=["POST"])
@@ -202,5 +241,5 @@ def generate():
         return json.dumps({"message": "Something went wrong", "ok": False})
 
 if __name__ == "__main__":
-    app.run(debug=True, port=os.getenv("PORT") or 5000)
+    app.run(debug=True, port=os.getenv("PORT") or 5001)
 
