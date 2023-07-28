@@ -49,7 +49,8 @@ def login_user():
     user = users_collection.find_one({"username": username, "password": password})
     if not user:
         return jsonify({"error": "Invalid credentials."}), 401
-    return jsonify({"message": "Login successful."}), 200
+    return jsonify({"message": "Login successful.", "username": username}), 200
+
 
 
 def generatePrompt(q):
