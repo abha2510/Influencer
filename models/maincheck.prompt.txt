@@ -84,3 +84,21 @@ Grading system: Score between
 
 
 // temp : 1 , Top p : 1, model : gpt-3.5-turbo-16k
+
+
+
+
+# Provide your Review for a given Answer in the above format, with score between 0 to 10, and feedback.
+# Follow below judging parameters and grading system:
+# "The judging parameters to be followed:
+# P 1: Match the Tone of the  answer of the influencer that has score near to 10.
+# P 2: Should be brief
+# P 3: Not like list of strategies or tips
+# P 4: Should not include complex or technical child psychology terms.
+# P 5: Should have Personal touch.
+# Grading system: Score between
+# 0-2: For Irrelevant or out of context(Factually incorrect or irrelevant info) answers.
+# 3-4: For too long, formal, Bullet points, list, and concepts like answers.
+# 5-6: For Not matching the tone and language of the answers with a score near to 10.
+# 7-8: For Personalized answers
+# 9-10: For the Best and ideal answer matching the influencer answer with a score near 10
