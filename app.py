@@ -167,7 +167,7 @@ These are small things we can do to ensure that our child feels both loved and c
 ####
 Please avoid bullet points and make it short and heart to heart feeling should be there.
 Make sure answer should be revelant, precise, conveinece, short answer and complete sentence and use user language while responsing.
-Q:{q}
+{q}
 '''
 
 def is_parenting_related(text):
@@ -186,7 +186,7 @@ def is_parenting_related(text):
     'mummy', 'papa', 'sikhaana', 'sikha', 'vyavahaar', 'saja', 'inkaam', 'margadarshak', 
     'salah', 'poshan', 'vikas', 'vruddhi', 'kumaar', 'garbha', 'garbh', 'janam', 
     'navjat', 'aaya', 'doodh', 'breastfeed', 'ghoomna', 'chalna', 'bolna', 'shauchalay', 
-    'train', 'prashikshan','daughters',
+    'train', 'prashikshan','daughters','baccha'
 ]
 
  return any(keyword in text for keyword in parenting_keywords)
@@ -205,7 +205,7 @@ def chat():
     if not user_key:
         return jsonify({"error": "OpenAI key is required."}), 400
 
-    # Use the user's OpenAI key to authenticate
+
     openai.api_key = user_key
 
     if is_parenting_related(q):
@@ -215,14 +215,19 @@ def chat():
                 {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."},
                 {"role": "user", "content": generatePrompt(q)}
             ],
-            temperature=1,
-            max_tokens=256,
+            temperature=0.7,
+            max_tokens=200,
             top_p=1,
             frequency_penalty=0,
             presence_penalty=0
         )
+        # result = response["choices"][0]["message"]["content"]
+        # return jsonify({"chatbot_response": result})
+    
         result = response["choices"][0]["message"]["content"]
+        result = result.replace("Answer :", "").strip()
         return jsonify({"chatbot_response": result})
+
     else:
         return jsonify({"chatbot_response": "Please ask a relevant question."})
 
