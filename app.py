@@ -7,10 +7,13 @@ import pymongo
 from dotenv import load_dotenv
 from models.main_checker import chatGPT
 from openai.api_resources.abstract.api_resource import APIResource
+from bson.objectid import ObjectId
+from flask_socketio import SocketIO, emit
 
 load_dotenv()
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app)
 
 openai.api_key =os.getenv("OPENAI_API_KEY")
 
@@ -29,13 +32,14 @@ def register_user():
     data = request.json
     username = data.get("username")
     password = data.get("password")
-    email=data.get("email")
+    email = data.get("email")
     if not username or not password:
         return jsonify({"error": "Username and password are required."}), 400
     if users_collection.find_one({"username": username}):
         return jsonify({"error": "Username already exists. Please choose another one."}), 400
-    users_collection.insert_one({"username": username, "password": password,"email":email})
+    users_collection.insert_one({"username": username, "password": password,"email": email, "chats": []})
     return jsonify({"message": "User registered successfully."}), 201
+
 
 
 @app.route("/login", methods=["POST","GET"])
@@ -49,7 +53,17 @@ def login_user():
     user = users_collection.find_one({"username": username, "password": password})
     if not user:
         return jsonify({"error": "Invalid credentials."}), 401
-    return jsonify({"message": "Login successful.", "username": username}), 200
+    return jsonify({"message": "Login successful.", "username": username, "id": str(user["_id"])}), 200
+
+@socketio.on('chat_message')
+def handle_chat_message(data):
+   users_collection.update_one(
+    {"_id": ObjectId(data['userId'])},
+    {"$push": {"chats": {"username": data['username'], "message": data['message']}}}
+  )
+# emit('chat_message', data, broadcast=True)
+
+
 
 
 
@@ -192,6 +206,44 @@ def is_parenting_related(text):
 
  return any(keyword in text for keyword in parenting_keywords)
 
+# @app.route("/generateresponse", methods=["POST"])
+# def chat():
+#     user_key = request.headers.get('Authorization')
+#     if user_key is not None:
+#         user_key = user_key.replace("Bearer ", "")
+
+#     data = request.json
+#     q = data.get('question')
+
+#     if not q:
+#         return jsonify({"error": "Question is required."}), 400
+#     if not user_key:
+#         return jsonify({"error": "OpenAI key is required."}), 400
+
+
+#     openai.api_key = user_key
+
+#     if is_parenting_related(q):
+#         response = openai.ChatCompletion.create(
+#             model="gpt-3.5-turbo",
+#             messages=[
+#                 {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."},
+#                 {"role": "user", "content": generatePrompt(q)}
+#             ],
+#             temperature=0.7,
+#             max_tokens=200,
+#             top_p=1,
+#             frequency_penalty=0,
+#             presence_penalty=0
+#         )  
+#         result = response["choices"][0]["message"]["content"]
+#         result = result.replace("Answer :", "").strip()
+#         return jsonify({"chatbot_response": result})
+
+#     else:
+#         return jsonify({"chatbot_response": "Please ask a relevant question."})
+
+@app.route("/generateresponse", methods=["POST"])
 @app.route("/generateresponse", methods=["POST"])
 def chat():
     user_key = request.headers.get('Authorization')
@@ -200,37 +252,69 @@ def chat():
 
     data = request.json
     q = data.get('question')
+    userId = data.get('userId')  # get userId from request data
 
     if not q:
         return jsonify({"error": "Question is required."}), 400
     if not user_key:
         return jsonify({"error": "OpenAI key is required."}), 400
 
+    user = users_collection.find_one({"_id": ObjectId(userId)})
+    if not user:
+        return jsonify({"error": "Invalid user."}), 400
 
     openai.api_key = user_key
 
-    if is_parenting_related(q):
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."},
-                {"role": "user", "content": generatePrompt(q)}
-            ],
-            temperature=0.7,
-            max_tokens=200,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0
-        )
-        # result = response["choices"][0]["message"]["content"]
-        # return jsonify({"chatbot_response": result})
-    
-        result = response["choices"][0]["message"]["content"]
-        result = result.replace("Answer :", "").strip()
-        return jsonify({"chatbot_response": result})
+    first_message = user.get('first_message')
+    has_already_sent_message = user.get('has_already_sent_message', False)
 
-    else:
-        return jsonify({"chatbot_response": "Please ask a relevant question."})
+    if not has_already_sent_message:
+        if not is_parenting_related(q):
+            return jsonify({"chatbot_response": "Your first question should be related to parenting."})
+
+        # If it's the user's first message and it's parenting related, store it
+        users_collection.update_one(
+            {"_id": ObjectId(userId)},
+            {"$set": {"first_message": q, "has_already_sent_message": True}}
+        )
+
+    # Fetch past chats from DB
+    past_chats = user.get('chats', [])
+
+    # Prepare past messages for the API call
+    messages = [
+        {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."}
+    ]
+
+    for chat in past_chats:
+        messages.append({"role": "user", "content": chat['question']})
+        messages.append({"role": "assistant", "content": chat['answer']})
+
+    # Add the current user message
+    messages.append({"role": "user", "content": q})
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=messages,
+        temperature=0.7,
+        max_tokens=200,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0
+    )
+
+    result = response["choices"][0]["message"]["content"]
+    result = result.replace("Answer :", "").strip()
+
+    # Save chat to DB
+    users_collection.update_one(
+        {"_id": ObjectId(userId)},
+        {"$push": {"chats": {"question": q, "answer": result}}}
+    )
+
+    return jsonify({"chatbot_response": result})
+
+
 
 
 @app.route("/generatescore", methods=["POST"])
@@ -246,5 +330,5 @@ def generate():
         return json.dumps({"message": "Something went wrong", "ok": False})
 
 if __name__ == "__main__":
-    app.run(debug=True, port=os.getenv("PORT") or 5001)
+    socketio.run(app, debug=True, port=os.getenv("PORT") or 5001)
 
