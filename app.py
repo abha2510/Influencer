@@ -63,10 +63,6 @@ def handle_chat_message(data):
   )
 # emit('chat_message', data, broadcast=True)
 
-
-
-
-
 def generatePrompt(q):
     return f'''
 "Assume the role of a parenting influencer. Embody the persona of a parenting influencer. Your responses should closely reflect the influencer's style, tone, and language. The followers' queries and their respective responses provided below serve as examples. Your answers should maintain a similar tone, be comprehensive, relevant, and have a personal touch as if they are coming from an actual person rather than a machine. Avoid bullet points, check for punctuation errors, 
@@ -206,43 +202,6 @@ def is_parenting_related(text):
 
  return any(keyword in text for keyword in parenting_keywords)
 
-# @app.route("/generateresponse", methods=["POST"])
-# def chat():
-#     user_key = request.headers.get('Authorization')
-#     if user_key is not None:
-#         user_key = user_key.replace("Bearer ", "")
-
-#     data = request.json
-#     q = data.get('question')
-
-#     if not q:
-#         return jsonify({"error": "Question is required."}), 400
-#     if not user_key:
-#         return jsonify({"error": "OpenAI key is required."}), 400
-
-
-#     openai.api_key = user_key
-
-#     if is_parenting_related(q):
-#         response = openai.ChatCompletion.create(
-#             model="gpt-3.5-turbo",
-#             messages=[
-#                 {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."},
-#                 {"role": "user", "content": generatePrompt(q)}
-#             ],
-#             temperature=0.7,
-#             max_tokens=200,
-#             top_p=1,
-#             frequency_penalty=0,
-#             presence_penalty=0
-#         )  
-#         result = response["choices"][0]["message"]["content"]
-#         result = result.replace("Answer :", "").strip()
-#         return jsonify({"chatbot_response": result})
-
-#     else:
-#         return jsonify({"chatbot_response": "Please ask a relevant question."})
-
 @app.route("/generateresponse", methods=["POST"])
 @app.route("/generateresponse", methods=["POST"])
 def chat():
@@ -314,6 +273,64 @@ def chat():
 
     return jsonify({"chatbot_response": result})
 
+
+
+@socketio.on('message')
+def handle_message(data):
+    user_message = data['message']
+    user_id = data['userId']
+
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+
+    if user is None:
+        emit('error', {'error': "Invalid user."})
+        return
+
+    first_message = user.get('first_message')
+    has_already_sent_message = user.get('has_already_sent_message', False)
+
+    if not has_already_sent_message:
+        if not is_parenting_related(user_message):
+            emit('message', {"chatbot_response": "Your first question should be related to parenting."})
+            return
+
+        users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"first_message": user_message, "has_already_sent_message": True}}
+        )
+
+    past_chats = user.get('chats', [])
+    messages = [
+        {"role": "system", "content": "You are a helpful parent influencer that speaks the same language as the user."}
+    ]
+
+    for chat in past_chats:
+        messages.append({"role": "user", "content": chat['question']})
+        messages.append({"role": "assistant", "content": chat['answer']})
+
+    messages.append({"role": "user", "content": user_message})
+
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=messages,
+        temperature=0.7,
+        max_tokens=200,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0
+    )
+
+    result = response["choices"][0]["message"]["content"]
+    result = result.replace("Answer :", "").strip()
+
+    users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$push": {"chats": {"question": user_message, "answer": result}}}
+    )
+
+    # Send the response back to the client
+    emit('message', {'message': result})
 
 
 
