@@ -202,7 +202,7 @@ def is_parenting_related(text):
 
  return any(keyword in text for keyword in parenting_keywords)
 
-@app.route("/generateresponse", methods=["POST"])
+
 @app.route("/generateresponse", methods=["POST"])
 def chat():
     user_key = request.headers.get('Authorization')
