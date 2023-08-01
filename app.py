@@ -346,6 +346,7 @@ def generate():
         print(e)
         return json.dumps({"message": "Something went wrong", "ok": False})
 
+
 if __name__ == "__main__":
   socketio.run(app, debug=True, port=os.getenv("PORT") or 5001)
 
