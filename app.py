@@ -487,6 +487,20 @@ def chat():
     return jsonify({"chatbot_response": result})
 
 
+
+@app.route("/getChatHistory", methods=["POST"])
+def get_chat_history():
+    data = request.json
+    userId = data.get("userId")
+
+    user = users_collection.find_one({"_id": ObjectId(userId)})
+    if not user:
+        return jsonify({"error": "Invalid user."}), 400
+
+    return jsonify(user.get("chats", [])), 200
+
+
+
 @app.route("/generatescore", methods=["POST"])
 def generate():
     try:
